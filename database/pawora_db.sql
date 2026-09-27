@@ -1,5 +1,97 @@
-CREATE DATABASE IF NOT EXISTS pawora_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE pawora_db;
+-- PAWORA schema + seed data
+--
+-- Import this into an EMPTY database that you have already created and
+-- selected. This file deliberately does NOT run "CREATE DATABASE" or "USE",
+-- because those statements override the database chosen in phpMyAdmin and
+-- would silently install the tables into a different (or non-existent) one.
+--
+--   phpMyAdmin : create the database, select it, then Import -> this file
+--   command line: mysql -u USER -p DBNAME < database/pawora_db.sql
+--
+-- The database name the application connects to is configured separately, in
+-- config/database.php (or the PAWORA_DB_* environment variables).
+--
+-- Safe to import more than once: every table uses CREATE TABLE IF NOT EXISTS
+-- and every seed row uses INSERT IGNORE.
+
+CREATE TABLE IF NOT EXISTS categories (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    slug VARCHAR(120) NOT NULL,
+    description VARCHAR(255) NULL,
+    status ENUM('Active', 'Inactive') NOT NULL DEFAULT 'Active',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT uq_categories_name UNIQUE (name),
+    CONSTRAINT uq_categories_slug UNIQUE (slug),
+    INDEX idx_categories_status (status, name)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS products (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    category_id INT UNSIGNED NOT NULL,
+    brand VARCHAR(80) NULL,
+    name VARCHAR(160) NOT NULL,
+    description TEXT NOT NULL,
+    price DECIMAL(10,2) NOT NULL,
+    currency CHAR(3) NOT NULL DEFAULT 'LKR',
+    price_type ENUM('DEMO', 'SOURCE') NOT NULL DEFAULT 'DEMO',
+    price_source VARCHAR(500) NULL,
+    source_price DECIMAL(10,2) NULL,
+    source_currency CHAR(3) NULL,
+    source_exchange_rate DECIMAL(14,4) NULL,
+    price_checked_on DATE NULL,
+    discount DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+    sku VARCHAR(50) NOT NULL,
+    stock_quantity INT UNSIGNED NOT NULL DEFAULT 0,
+    low_stock_threshold INT UNSIGNED NOT NULL DEFAULT 5,
+    stock_type ENUM('DEMO', 'SOURCE') NOT NULL DEFAULT 'DEMO',
+    stock_source VARCHAR(160) NULL,
+    rating DECIMAL(2,1) NULL,
+    review_count INT UNSIGNED NULL,
+    rating_type ENUM('DEMO', 'SOURCE') NULL,
+    image VARCHAR(500) NULL,
+    image_url VARCHAR(500) NULL,
+    image_alt VARCHAR(160) NULL,
+    source_url VARCHAR(500) NULL,
+    image_source_name VARCHAR(120) NULL,
+    image_source_url VARCHAR(500) NULL,
+    status ENUM('Active', 'Inactive', 'Out of Stock') NOT NULL DEFAULT 'Active',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT uq_products_sku UNIQUE (sku),
+    CONSTRAINT fk_products_category FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE RESTRICT,
+    CONSTRAINT chk_products_price CHECK (price >= 0),
+    CONSTRAINT chk_products_discount CHECK (discount >= 0 AND discount <= 100),
+    CONSTRAINT chk_products_threshold CHECK (low_stock_threshold >= 0),
+    CONSTRAINT chk_products_rating CHECK (rating IS NULL OR (rating >= 0 AND rating <= 5)),
+    CONSTRAINT chk_products_source_price CHECK (source_price IS NULL OR source_price >= 0),
+    CONSTRAINT chk_products_exchange_rate CHECK (source_exchange_rate IS NULL OR source_exchange_rate > 0),
+    INDEX idx_products_category (category_id, status),
+    INDEX idx_products_stock (stock_quantity, low_stock_threshold),
+    INDEX idx_products_brand (brand),
+    INDEX idx_products_updated (updated_at)
+) ENGINE=InnoDB;
+
+DROP TRIGGER IF EXISTS trg_products_stock_status_before_insert;
+CREATE TRIGGER trg_products_stock_status_before_insert
+BEFORE INSERT ON products
+FOR EACH ROW
+SET NEW.status = CASE
+    WHEN NEW.stock_quantity = 0 AND NEW.status <> 'Inactive' THEN 'Out of Stock'
+    WHEN NEW.stock_quantity > 0 AND NEW.status = 'Out of Stock' THEN 'Active'
+    ELSE NEW.status
+END;
+
+DROP TRIGGER IF EXISTS trg_products_stock_status_before_update;
+CREATE TRIGGER trg_products_stock_status_before_update
+BEFORE UPDATE ON products
+FOR EACH ROW
+SET NEW.status = CASE
+    WHEN NEW.stock_quantity = 0 AND NEW.status <> 'Inactive' THEN 'Out of Stock'
+    WHEN NEW.stock_quantity > 0 AND NEW.status = 'Out of Stock' THEN 'Active'
+    ELSE NEW.status
+END;
 
 CREATE TABLE IF NOT EXISTS users (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -174,86 +266,6 @@ CREATE TABLE IF NOT EXISTS admin_logs (
     CONSTRAINT fk_admin_logs_user FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_admin_logs_admin (admin_id, created_at)
 ) ENGINE=InnoDB;
-
-CREATE TABLE IF NOT EXISTS categories (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    slug VARCHAR(120) NOT NULL,
-    description VARCHAR(255) NULL,
-    status ENUM('Active', 'Inactive') NOT NULL DEFAULT 'Active',
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    CONSTRAINT uq_categories_name UNIQUE (name),
-    CONSTRAINT uq_categories_slug UNIQUE (slug),
-    INDEX idx_categories_status (status, name)
-) ENGINE=InnoDB;
-
-CREATE TABLE IF NOT EXISTS products (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    category_id INT UNSIGNED NOT NULL,
-    brand VARCHAR(80) NULL,
-    name VARCHAR(160) NOT NULL,
-    description TEXT NOT NULL,
-    price DECIMAL(10,2) NOT NULL,
-    currency CHAR(3) NOT NULL DEFAULT 'LKR',
-    price_type ENUM('DEMO', 'SOURCE') NOT NULL DEFAULT 'DEMO',
-    price_source VARCHAR(500) NULL,
-    source_price DECIMAL(10,2) NULL,
-    source_currency CHAR(3) NULL,
-    source_exchange_rate DECIMAL(14,4) NULL,
-    price_checked_on DATE NULL,
-    discount DECIMAL(5,2) NOT NULL DEFAULT 0.00,
-    sku VARCHAR(50) NOT NULL,
-    stock_quantity INT UNSIGNED NOT NULL DEFAULT 0,
-    low_stock_threshold INT UNSIGNED NOT NULL DEFAULT 5,
-    stock_type ENUM('DEMO', 'SOURCE') NOT NULL DEFAULT 'DEMO',
-    stock_source VARCHAR(160) NULL,
-    rating DECIMAL(2,1) NULL,
-    review_count INT UNSIGNED NULL,
-    rating_type ENUM('DEMO', 'SOURCE') NULL,
-    image VARCHAR(500) NULL,
-    image_url VARCHAR(500) NULL,
-    image_alt VARCHAR(160) NULL,
-    source_url VARCHAR(500) NULL,
-    image_source_name VARCHAR(120) NULL,
-    image_source_url VARCHAR(500) NULL,
-    status ENUM('Active', 'Inactive', 'Out of Stock') NOT NULL DEFAULT 'Active',
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    CONSTRAINT uq_products_sku UNIQUE (sku),
-    CONSTRAINT fk_products_category FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE RESTRICT,
-    CONSTRAINT chk_products_price CHECK (price >= 0),
-    CONSTRAINT chk_products_discount CHECK (discount >= 0 AND discount <= 100),
-    CONSTRAINT chk_products_threshold CHECK (low_stock_threshold >= 0),
-    CONSTRAINT chk_products_rating CHECK (rating IS NULL OR (rating >= 0 AND rating <= 5)),
-    CONSTRAINT chk_products_source_price CHECK (source_price IS NULL OR source_price >= 0),
-    CONSTRAINT chk_products_exchange_rate CHECK (source_exchange_rate IS NULL OR source_exchange_rate > 0),
-    INDEX idx_products_category (category_id, status),
-    INDEX idx_products_stock (stock_quantity, low_stock_threshold),
-    INDEX idx_products_brand (brand),
-    INDEX idx_products_updated (updated_at)
-) ENGINE=InnoDB;
-
-DROP TRIGGER IF EXISTS trg_products_stock_status_before_insert;
-CREATE TRIGGER trg_products_stock_status_before_insert
-BEFORE INSERT ON products
-FOR EACH ROW
-SET NEW.status = CASE
-    WHEN NEW.stock_quantity = 0 AND NEW.status <> 'Inactive' THEN 'Out of Stock'
-    WHEN NEW.stock_quantity > 0 AND NEW.status = 'Out of Stock' THEN 'Active'
-    ELSE NEW.status
-END;
-
-DROP TRIGGER IF EXISTS trg_products_stock_status_before_update;
-CREATE TRIGGER trg_products_stock_status_before_update
-BEFORE UPDATE ON products
-FOR EACH ROW
-SET NEW.status = CASE
-    WHEN NEW.stock_quantity = 0 AND NEW.status <> 'Inactive' THEN 'Out of Stock'
-    WHEN NEW.stock_quantity > 0 AND NEW.status = 'Out of Stock' THEN 'Active'
-    ELSE NEW.status
-END;
-
 CREATE TABLE IF NOT EXISTS orders (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     user_id INT UNSIGNED NOT NULL,
