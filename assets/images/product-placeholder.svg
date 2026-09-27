@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-labelledby="title desc">
+  <title id="title">PAWORA pet care product placeholder</title>
+  <desc id="desc">A simple illustrated shopping bag with a paw print.</desc>
+  <rect width="800" height="600" fill="#e7f0e9"/>
+  <circle cx="400" cy="300" r="178" fill="#ffffff" opacity=".8"/>
+  <path d="M306 238h188l24 188H282z" fill="#d9a86c"/>
+  <path d="M345 246c0-54 24-88 55-88s55 34 55 88" fill="none" stroke="#315542" stroke-width="22" stroke-linecap="round"/>
+  <ellipse cx="400" cy="350" rx="56" ry="43" fill="#315542"/>
+  <ellipse cx="351" cy="310" rx="20" ry="27" fill="#315542" transform="rotate(-24 351 310)"/>
+  <ellipse cx="382" cy="280" rx="20" ry="27" fill="#315542" transform="rotate(-8 382 280)"/>
+  <ellipse cx="418" cy="280" rx="20" ry="27" fill="#315542" transform="rotate(8 418 280)"/>
+  <ellipse cx="449" cy="310" rx="20" ry="27" fill="#315542" transform="rotate(24 449 310)"/>
+</svg>

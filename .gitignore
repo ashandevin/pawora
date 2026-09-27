@@ -1,0 +1,52 @@
+# ---------------------------------------------------------------------------
+# PAWORA - ignore rules
+# ---------------------------------------------------------------------------
+
+# Local environment / secrets (use .env.example as the template)
+.env
+.env.local
+
+# Runtime logs and caches
+*.log
+logs/
+.cache/
+.php-cs-fixer.cache
+
+# ---------------------------------------------------------------------------
+# User-uploaded images
+# Uploads are stored with a random 24-hex filename, so they are matched by shape
+# and never committed.
+# ---------------------------------------------------------------------------
+assets/images/products/[0-9a-f]{24}.*
+assets/images/pets/[0-9a-f]{24}.*
+
+# ---------------------------------------------------------------------------
+# Catalog pack shots
+# The 92 product photos are third-party brand images downloaded from retailer
+# CDNs during catalog research and are NOT ours to redistribute. They are kept
+# out of the repository on purpose.
+#
+# The site still works without them: database/pawora_db.sql stores the remote
+# image URLs, and the shop falls back to the local placeholder when offline.
+# To restore the local copies after cloning, run:
+#
+#     php database/catalog/localize-images.php --apply
+#
+# Exclude the downloaded pack shots, but keep the placeholder so the site has a
+# default image without any third-party photography in the repository.
+assets/images/products/*
+!assets/images/products/placeholder.svg
+assets/images/pets/*
+
+# Generated catalog build artifacts (rebuilt by build-research-sql.php)
+database/catalog/products.sql
+
+# ---------------------------------------------------------------------------
+# OS / editor noise
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
