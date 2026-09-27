@@ -29,14 +29,66 @@ require_once __DIR__ . '/../config/database.php';
 
 const SEED_FILE = __DIR__ . '/pawora_db.sql';
 
-/** Personal data that must never appear in an exported file. */
-const FORBIDDEN = [
-    'ashandevin@gmail.com',
-    'asc@gmail.com',
-    'test@gmail.com',
-    'Thummodara',
-    '94701601800',
-];
+/**
+ * Personal data must never appear in an exported file.
+ *
+ * Rather than listing known values (which would mean storing real addresses and
+ * phone numbers in this file, and would still miss anything new), the export is
+ * checked for anything that looks like real personal data:
+ *   - an email address outside the known demonstration domains
+ *   - a phone number or a street address anywhere in the text
+ */
+const ALLOWED_EMAIL_DOMAINS = ['pawora.test', 'example.com', 'example.org', 'localhost'];
+
+/**
+ * Placeholder contact details seeded by database/pawora_db.sql. They are
+ * fictional fixture values, not real personal data, so the phone-number scan
+ * must not flag them. Compared with all non-digits removed.
+ */
+const DEMO_PHONE_NUMBERS = ['0771234567', '0770000000', '94112345678', '94771234567'];
+
+function digits(string $value): string
+{
+    return preg_replace('/\D+/', '', $value);
+}
+
+function findPersonalData(string $sql): array
+{
+    $hits = [];
+
+    // Any e-mail that is not clearly a demonstration address.
+    if (preg_match_all('/\b([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+)\b/', $sql, $m)) {
+        foreach (array_unique($m[1]) as $email) {
+            $domain = strtolower(substr(strrchr($email, '@') ?: '', 1));
+            if (!in_array($domain, ALLOWED_EMAIL_DOMAINS, true)) {
+                $hits[] = "e-mail address outside the demo domains: {$email}";
+            }
+        }
+    }
+
+    // Phone numbers, ignoring the fictional ones from the seed. The lookarounds
+    // keep the pattern from matching digits inside a longer token, such as the
+    // numeric part of an image filename or URL.
+    if (preg_match_all('/(?<![A-Za-z0-9-])(?:\+?94|0)7[\s\d]{8,12}(?![A-Za-z0-9-])/', $sql, $m)) {
+        foreach (array_unique($m[0]) as $phone) {
+            if (!in_array(digits($phone), DEMO_PHONE_NUMBERS, true)) {
+                $hits[] = 'phone number: ' . trim($phone);
+            }
+        }
+    }
+
+    // Street addresses. Only quoted data values are considered, so schema text
+    // such as "DECIMAL(10,2)" cannot be mistaken for an address.
+    if (preg_match_all("/'([^'\\\\]*)'/", $sql, $m)) {
+        foreach ($m[1] as $value) {
+            if (preg_match('/^\d{2,4}\s*,\s*[A-Za-z][A-Za-z\s,.-]{3,}$/u', $value)) {
+                $hits[] = 'possible street address: ' . trim($value);
+            }
+        }
+    }
+
+    return array_values(array_unique($hits));
+}
 
 /** Users kept in the export, by id. Everyone else is a real local account. */
 const KEEP_USERS = [1, 2, 3];
@@ -119,19 +171,33 @@ function fetchWhere(PDO $pdo, string $table, string $where, array $params = []):
 
 /**
  * Picks one clean order per status so the export demonstrates the whole order
- * lifecycle (pending, paid, processing, delivered, cancelled) without dragging
- * in the junk rows the harnesses created.
+ * lifecycle (pending, paid, processing, delivered, cancelled).
+ *
+ * Rather than blacklisting the individual junk values the test harnesses
+ * happened to write, an order is kept only when it looks like a genuine
+ * demonstration order:
+ *
+ *   - it belongs to a kept demonstration account;
+ *   - the billing name is the account holder's own registered name, which
+ *     rejects the scripted names the harnesses submitted;
+ *   - the shipping address contains a comma-separated locality, which rejects
+ *     the keyboard-mashing values.
+ *
+ * This is expressed as a rule so it keeps working when the names and strings
+ * used by a future test run differ from the ones used today.
  */
 function pickOrders(PDO $pdo, string $mode): array
 {
-    $rows = fetchWhere(
-        $pdo,
-        'orders',
-        'user_id IN (1,2,3)
-         AND billing_name NOT LIKE ? AND billing_name NOT IN (?, ?)
-         AND shipping_address NOT LIKE ? AND shipping_address NOT LIKE ?',
-        ['%Bold%', 'Vishaly', 'test', '%sgf%', '%4444%']
+    $st = $pdo->prepare(
+        'SELECT o.* FROM orders o
+           JOIN users u ON u.id = o.user_id
+          WHERE o.user_id IN (1,2,3)
+            AND o.billing_name = u.name
+            AND o.shipping_address LIKE ?
+          ORDER BY o.id'
     );
+    $st->execute(['%,%']);
+    $rows = $st->fetchAll(PDO::FETCH_ASSOC);
 
     if ($mode === 'all') {
         return $rows;
@@ -344,15 +410,11 @@ echo "  file:        {$outPath} (" . number_format(strlen($sql) / 1024, 1) . " K
 
 $leaks = [];
 if (!$allowPii) {
-    foreach (FORBIDDEN as $needle) {
-        if (stripos($sql, $needle) !== false) {
-            $leaks[] = $needle;
-        }
-    }
+    $leaks = findPersonalData($sql);
 }
 
 if ($leaks === []) {
-    echo "  privacy:     clean (no real accounts, addresses or phone numbers)\n";
+    echo "  privacy:     clean (no e-mail, address or phone number outside the demo domains)\n";
 } else {
     echo "  privacy:     FAILED - the dump still contains:\n";
     foreach ($leaks as $l) {
